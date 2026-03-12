@@ -11,7 +11,7 @@ echo "Execution started: $EXEC_ID"
 
 echo "Waiting for approval token..."
 for i in {1..60}; do
-  TOKEN=$(aws codepipeline get-pipeline-state --name "$PIPELINE" | jq -r --arg s "$STAGE" --arg a "$ACTION" --arg exec "$EXEC_ID" '.stageStates[] | select(.stageName==$s) | .actionStates[] | select(.actionName==$a) | select(.latestExecution.pipelineExecutionId==$exec) | .latestExecution.token // empty')
+  TOKEN=$(aws codepipeline get-pipeline-state --name "$PIPELINE" | jq -r --arg s "$STAGE" --arg a "$ACTION" '.stageStates[] | select(.stageName==$s) | .actionStates[] | select(.actionName==$a) | .latestExecution.token // empty')
   if [[ -n "$TOKEN" ]]; then
     echo "Token received."
     break
@@ -30,7 +30,7 @@ echo "Approval submitted."
 while true; do
   STATUS=$(aws codepipeline get-pipeline-execution --pipeline-name "$PIPELINE" --pipeline-execution-id "$EXEC_ID" --query 'pipelineExecution.status' --output text)
   echo "Status: $STATUS"
-  [[ "$STATUS" == "Succeeded" || "$STATUS" == "Failed" || "$STATUS" == "Superseded" || "$STATUS" == "Stopped" ]] && break
+  [[ "$STATUS" == "Succeeded" || "$STATUS" == "Failed" || "$STATUS" == "Stopped" || "$STATUS" == "Superseded" ]] && break
   sleep 10
 done
 
