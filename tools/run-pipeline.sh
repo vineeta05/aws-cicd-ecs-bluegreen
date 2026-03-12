@@ -30,7 +30,7 @@ echo "Approval submitted."
 while true; do
   STATUS=$(aws codepipeline get-pipeline-execution --pipeline-name "$PIPELINE" --pipeline-execution-id "$EXEC_ID" --query 'pipelineExecution.status' --output text)
   echo "Status: $STATUS"
-  [[ "$STATUS" == "Succeeded" || "$STATUS" == "Failed" ]] && break
+  [[ "$STATUS" == "Succeeded" || "$STATUS" == "Failed" || "$STATUS" == "Superseded" || "$STATUS" == "Stopped" ]] && break
   sleep 10
 done
 
