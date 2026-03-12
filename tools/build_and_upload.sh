@@ -57,35 +57,24 @@ for ENV in DEV INT QA; do
   echo ">>> Uploaded ${ENV}.zip"
 done
 
-# Step 5: Update pipeline source using Python
+# Step 5: Update pipeline source using jq (pure bash)
 echo ">>> Updating pipeline source..."
+
+# Install jq if not present
+sudo apt-get install -y jq
 
 # Get pipeline JSON
 aws codepipeline get-pipeline --name "$PIPELINE_NAME" > /tmp/pipeline_raw.json
 
-# Fix JSON and update bucket/key using Python
-python3 << 'EOF'
-import json
-
-with open('/tmp/pipeline_raw.json') as f:
-    data = json.load(f)
-
-# Extract only pipeline (remove metadata)
-pipeline = data['pipeline']
-
-# Update bucket and object key in Source stage
-for stage in pipeline['stages']:
-    for action in stage['actions']:
-        if action['actionTypeId']['category'] == 'Source':
-            action['configuration']['S3Bucket'] = 'devops-shared-scripts-bucket'
-            action['configuration']['S3ObjectKey'] = 'appspec/DEV.zip'
-
-# Save clean JSON
-with open('/tmp/pipeline.json', 'w') as f:
-    json.dump({'pipeline': pipeline}, f, indent=4)
-
-print("JSON fixed successfully!")
-EOF
+# Remove metadata and update bucket/key using jq
+jq '.pipeline | 
+    (.stages[] | 
+    select(.name=="Source") | 
+    .actions[].configuration) |= 
+    . + {
+        "S3Bucket": "devops-shared-scripts-bucket",
+        "S3ObjectKey": "appspec/DEV.zip"
+    }' /tmp/pipeline_raw.json > /tmp/pipeline.json
 
 # Apply updated pipeline
 aws codepipeline update-pipeline --cli-input-json file:///tmp/pipeline.json
