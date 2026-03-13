@@ -11,7 +11,16 @@ echo "Execution started: $EXEC_ID"
 
 echo "Waiting for approval token..."
 for i in {1..60}; do
-  TOKEN=$(aws codepipeline get-pipeline-state --name "$PIPELINE" | jq -r --arg s "$STAGE" --arg a "$ACTION" '.stageStates[] | select(.stageName==$s) | .actionStates[] | select(.actionName==$a) | .latestExecution.token // empty')
+TOKEN=$(aws codepipeline get-pipeline-state --name "$PIPELINE" | jq -r \
+  --arg s "$STAGE" \
+  --arg a "$ACTION" \
+  --arg exec "$EXEC_ID" \
+  '.stageStates[] | 
+   select(.stageName==$s) | 
+   .actionStates[] | 
+   select(.actionName==$a) | 
+   select(.latestExecution.pipelineExecutionId==$exec) |
+   .latestExecution.token // empty')
   if [[ -n "$TOKEN" ]]; then
     echo "Token received."
     break
