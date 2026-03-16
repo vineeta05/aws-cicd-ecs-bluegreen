@@ -7,9 +7,9 @@ ACTION="manual-approval"
 DEPLOY_STAGE="Deploy"
 DEPLOY_ACTION="Deploy"
 
-# ─────────────────────────────────────────
-# Step 0: Cleanup — purani executions kill karo
-# ─────────────────────────────────────────
+# ---------------------------------------------------------
+# Step 0: Pre-check - Stop all old executions before start
+# ---------------------------------------------------------
 echo ">>> Checking for old executions..."
 
 while true; do
@@ -27,38 +27,50 @@ while true; do
     '.stageStates[] | select(.stageName==$s) |
      .latestExecution.status // empty')
 
-  PREV_EXEC_ID=$(echo "$PIPELINE_STATE" | jq -r \
-    --arg s "$STAGE" \
-    '.stageStates[] | select(.stageName==$s) |
-     .latestExecution.pipelineExecutionId // empty')
-
   echo ">>> Stage status: ${STAGE_STATUS:-none}"
   echo ">>> Deploy status: ${DEPLOY_ACTION_STATUS:-none}"
 
+  # Case 1: Deploy is running - wait for it to complete
   if [[ "$DEPLOY_ACTION_STATUS" == "InProgress" ]]; then
-    echo ">>> Deploy running — waiting 10s..."
+    echo ">>> Deployment is running - waiting 10s..."
     sleep 10
     continue
 
-  elif [[ "$STAGE_STATUS" == "InProgress" && "$DEPLOY_ACTION_STATUS" != "InProgress" ]]; then
-    echo ">>> Stopping old execution: $PREV_EXEC_ID"
-    aws codepipeline stop-pipeline-execution \
+  # Case 2: Stage is blocked but deploy is not running - kill all
+  elif [[ "$STAGE_STATUS" == "InProgress" && \
+          "$DEPLOY_ACTION_STATUS" != "InProgress" ]]; then
+
+    echo ">>> Finding all pending executions..."
+    ALL_EXEC_IDS=$(aws codepipeline list-pipeline-executions \
       --pipeline-name "$PIPELINE" \
-      --pipeline-execution-id "$PREV_EXEC_ID" \
-      --abandon \
-      --reason "Cleanup before fresh run"
+      --query 'pipelineExecutionSummaries[?status==`InProgress`].pipelineExecutionId' \
+      --output text)
+
+    echo ">>> Executions to kill: $ALL_EXEC_IDS"
+
+    for EXEC in $ALL_EXEC_IDS; do
+      echo ">>> Stopping execution: $EXEC"
+      aws codepipeline stop-pipeline-execution \
+        --pipeline-name "$PIPELINE" \
+        --pipeline-execution-id "$EXEC" \
+        --abandon \
+        --reason "Cleanup before fresh run"
+    done
+
+    echo ">>> All old executions stopped - rechecking..."
     sleep 5
     continue
 
+  # Case 3: Stage is clear - start fresh
   else
-    echo ">>> Stage is clear! Starting fresh..."
+    echo ">>> Stage is clear - starting fresh execution..."
     break
   fi
 done
 
-# ─────────────────────────────────────────
-# Step 1: Nayi execution start karo
-# ─────────────────────────────────────────
+# ---------------------------------------------------------
+# Step 1: Start new pipeline execution
+# ---------------------------------------------------------
 echo "Starting pipeline: $PIPELINE"
 EXEC_ID=$(aws codepipeline start-pipeline-execution \
   --name "$PIPELINE" \
@@ -66,10 +78,10 @@ EXEC_ID=$(aws codepipeline start-pipeline-execution \
   --output text)
 echo "Execution started: $EXEC_ID"
 
-# ─────────────────────────────────────────
-# Step 2: Approval token ka wait karo
-# ─────────────────────────────────────────
-echo "Waiting for approval token..."
+# ---------------------------------------------------------
+# Step 2: Wait for approval token for THIS execution only
+# ---------------------------------------------------------
+echo "Waiting for approval token for execution $EXEC_ID..."
 TOKEN=""
 for i in {1..60}; do
   STAGE_STATE=$(aws codepipeline get-pipeline-state --name "$PIPELINE")
@@ -87,11 +99,11 @@ for i in {1..60}; do
        .latestExecution.token // empty')
 
     if [[ -n "$TOKEN" ]]; then
-      echo "Token received for execution $EXEC_ID"
+      echo "Approval token received for execution $EXEC_ID"
       break
     fi
   else
-    echo "Attempt $i: Waiting for $EXEC_ID to reach Approval..."
+    echo "Attempt $i: Approval stage owned by ${STAGE_EXEC_ID:-none}, waiting for $EXEC_ID..."
   fi
   sleep 10
 done
@@ -101,20 +113,20 @@ if [[ -z "${TOKEN:-}" ]]; then
   exit 1
 fi
 
-# ─────────────────────────────────────────
-# Step 3: Approve karo
-# ─────────────────────────────────────────
+# ---------------------------------------------------------
+# Step 3: Approve the pipeline
+# ---------------------------------------------------------
 aws codepipeline put-approval-result \
   --pipeline-name "$PIPELINE" \
   --stage-name "$STAGE" \
   --action-name "$ACTION" \
   --token "$TOKEN" \
   --result "summary=Approved automatically by script,status=Approved"
-echo "Approval submitted."
+echo "Approval submitted for execution $EXEC_ID."
 
-# ─────────────────────────────────────────
-# Step 4: Pipeline status monitor karo
-# ─────────────────────────────────────────
+# ---------------------------------------------------------
+# Step 4: Monitor pipeline until terminal state
+# ---------------------------------------------------------
 echo "Monitoring pipeline execution $EXEC_ID..."
 while true; do
   STATUS=$(aws codepipeline get-pipeline-execution \
