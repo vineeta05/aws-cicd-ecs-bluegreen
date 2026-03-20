@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Java CI/CD Pipeline using CloudFormation
+Description: Java CI/CD Pipeline with ECS Fargate Rolling Update
 
 Resources:
 
@@ -8,6 +8,69 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: devops-shared-scripts-bucket
+
+  # ECR Repository
+  ECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: cicd-demo
+
+  # ECS Cluster
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: java-cicd-cluster
+
+  # ECS Task Execution Role
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: ecs-task-execution-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  # ECS Task Definition
+  ECSTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: cicd-demo-task
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: '256'
+      Memory: '512'
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: cicd-demo
+          Image: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/cicd-demo:latest"
+          PortMappings:
+            - ContainerPort: 8080
+              Protocol: tcp
+          Essential: true
+
+  # ECS Service
+  ECSService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: cicd-demo-service
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref ECSTaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets:
+            - subnet-0d297574a09bf9a59
+          SecurityGroups:
+            - sg-04cc4a899dd380cf3
 
   # CodeBuild Service Role
   CodeBuildServiceRole:
@@ -28,15 +91,18 @@ Resources:
             Statement:
               - Effect: Allow
                 Action:
-                  - logs:CreateLogGroup
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
+                  - logs:*
                 Resource: arn:aws:logs:*:*:*
               - Effect: Allow
                 Action:
                   - s3:GetObject
                   - s3:PutObject
-                Resource: !Sub "${ArtifactBucket.Arn}/*"
+                  - s3:GetObjectVersion
+                  - s3:GetBucketAcl
+                  - s3:GetBucketLocation
+                Resource:
+                  - !GetAtt ArtifactBucket.Arn
+                  - !Sub "${ArtifactBucket.Arn}/*"
               - Effect: Allow
                 Action:
                   - ecr:GetAuthorizationToken
@@ -71,70 +137,41 @@ Resources:
             Statement:
               - Effect: Allow
                 Action:
-                  - logs:CreateLogGroup
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
-                Resource: arn:aws:logs:*:*:*
+                  - s3:*
+                Resource:
+                  - !GetAtt ArtifactBucket.Arn
+                  - !Sub "${ArtifactBucket.Arn}/*"
               - Effect: Allow
                 Action:
-                  - s3:GetObject
-                  - s3:PutObject
-                  - s3:GetObjectVersion
-                Resource: !Sub "${ArtifactBucket.Arn}/*"
-              - Effect: Allow
-                Action:
-                  - codecommit:GetBranch
-                  - codecommit:GetCommit
-                  - codecommit:UploadArchive
-                  - codecommit:CancelUploadArchive
-                  - codecommit:GetUploadArchiveStatus
-                Resource: !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:*"
-              - Effect: Allow
-                Action:
-                  - codebuild:BatchGetBuilds
-                  - codebuild:BatchGetBuildBatches
-                  - codebuild:BatchGetReports
-                  - codebuild:BatchGetReportGroups
-                  - codebuild:CreateReport
-                  - codebuild:CreateReportGroup
-                  - codebuild:UpdateReport
-                  - codebuild:UpdateReportGroup
-                  - codebuild:PutTestReports
-                  - codebuild:PutClassicTestReports
-                  - codebuild:BatchBuildsBatch
-                  - codebuild:StartBuild
-                  - codebuild:StartBuildBatch
+                  - codecommit:*
                 Resource: '*'
               - Effect: Allow
                 Action:
-                  - codedeploy:CreateDeployment
-                  - codedeploy:GetApplication
-                  - codedeploy:GetApplicationRevision
-                  - codedeploy:GetDeployment
-                  - codedeploy:GetDeploymentConfig
-                  - codedeploy:GetDeploymentGroup
+                  - codebuild:*
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecs:*
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
                 Resource: '*'
 
-  # CodeDeploy Service Role
-  CodeDeployRole:
+  # ECS Deploy Role for CodePipeline
+  ECSDeployRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: CodeDeploy-role
+      RoleName: ecs-deploy-role
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
           - Effect: Allow
             Principal:
-              Service: codedeploy.amazonaws.com
+              Service: codepipeline.amazonaws.com
             Action: sts:AssumeRole
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSCodeDeployRole
-
-  # ECR Repository
-  ECRRepository:
-    Type: AWS::ECR::Repository
-    Properties:
-      RepositoryName: cicd-demo
+        - arn:aws:iam::aws:policy/AmazonECS_FullAccess
 
   # CodeBuild Project
   CodeBuildProject:
@@ -156,26 +193,6 @@ Resources:
       Artifacts:
         Type: CODEPIPELINE
 
-  # CodeDeploy Application
-  TestApplication:
-    Type: AWS::CodeDeploy::Application
-    Properties:
-      ApplicationName: test-application
-      ComputePlatform: Server
-
-  # CodeDeploy Deployment Group
-  TestDeploymentGroup:
-    Type: AWS::CodeDeploy::DeploymentGroup
-    Properties:
-      ApplicationName: !Ref TestApplication
-      DeploymentGroupName: test-deployment-group
-      ServiceRoleArn: !GetAtt CodeDeployRole.Arn
-      DeploymentConfigName: CodeDeployDefault.AllAtOnce
-      Ec2TagFilters:
-        - Key: Name
-          Value: test-server
-          Type: KEY_AND_VALUE
-
   # CodePipeline
   TestPipeline:
     Type: AWS::CodePipeline::Pipeline
@@ -187,7 +204,6 @@ Resources:
         Location: !Ref ArtifactBucket
       Stages:
 
-        # Stage 1: Source
         - Name: Source
           Actions:
             - Name: Source
@@ -203,7 +219,6 @@ Resources:
               OutputArtifacts:
                 - Name: SourceArtifact
 
-        # Stage 2: Build
         - Name: Build
           Actions:
             - Name: Build
@@ -219,7 +234,6 @@ Resources:
               OutputArtifacts:
                 - Name: BuildArtifact
 
-        # Stage 3: Approval
         - Name: Approval
           Actions:
             - Name: manual-approval
@@ -229,17 +243,18 @@ Resources:
                 Provider: Manual
                 Version: '1'
 
-        # Stage 4: Deploy
         - Name: Deploy
           Actions:
             - Name: Deploy
               ActionTypeId:
                 Category: Deploy
                 Owner: AWS
-                Provider: CodeDeploy
+                Provider: ECS
                 Version: '1'
               Configuration:
-                ApplicationName: !Ref TestApplication
-                DeploymentGroupName: !Ref TestDeploymentGroup
+                ClusterName: !Ref ECSCluster
+                ServiceName: !GetAtt ECSService.Name
+                FileName: imagedefinitions.json
               InputArtifacts:
                 - Name: BuildArtifact
+EOF
