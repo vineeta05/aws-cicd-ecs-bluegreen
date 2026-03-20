@@ -257,4 +257,3 @@ Resources:
                 FileName: imagedefinitions.json
               InputArtifacts:
                 - Name: BuildArtifact
-EOF
