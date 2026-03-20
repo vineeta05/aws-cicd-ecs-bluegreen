@@ -198,7 +198,7 @@ Resources:
                 Version: '1'
               Configuration:
                 RepositoryName: java-cicd-repo
-                BranchName: main
+                BranchName: master
                 PollForSourceChanges: false
               OutputArtifacts:
                 - Name: SourceArtifact
