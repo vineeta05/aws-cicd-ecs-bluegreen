@@ -152,7 +152,7 @@ Resources:
             Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/cicd-demo"
       Source:
         Type: CODEPIPELINE
-        BuildSpec: buildspec.yml
+        BuildSpec: java-cicd/buildspec.yml
       Artifacts:
         Type: CODEPIPELINE
 
