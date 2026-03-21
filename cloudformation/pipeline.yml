@@ -49,7 +49,7 @@ Resources:
       ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
       ContainerDefinitions:
         - Name: cicd-demo
-          Image: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/cicd-demo:latest"
+          Image: Image: public.ecr.aws/nginx/nginx:latest
           PortMappings:
             - ContainerPort: 8080
               Protocol: tcp
