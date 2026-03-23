@@ -458,6 +458,12 @@ Resources:
       DeploymentStyle:
         DeploymentType: BLUE_GREEN
         DeploymentOption: WITH_TRAFFIC_CONTROL
+      LoadBalancerInfo:
+        TargetGroupPairInfoList:
+          - FirstTargetGroup:
+              Name: !GetAtt TargetGroupBlue.TargetGroupName
+            SecondTargetGroup:
+              Name: !GetAtt TargetGroupGreen.TargetGroupName
 
   # CodePipeline
   TestPipeline:
