@@ -460,10 +460,8 @@ Resources:
         DeploymentOption: WITH_TRAFFIC_CONTROL
       LoadBalancerInfo:
         TargetGroupPairInfoList:
-          - FirstTargetGroup:
-              Name: !GetAtt TargetGroupBlue.TargetGroupName
-            SecondTargetGroup:
-              Name: !GetAtt TargetGroupGreen.TargetGroupName
+          - TargetGroupName: !GetAtt TargetGroupBlue.TargetGroupName
+            TargetGroup2Name: !GetAtt TargetGroupGreen.TargetGroupName
 
   # CodePipeline
   TestPipeline:
