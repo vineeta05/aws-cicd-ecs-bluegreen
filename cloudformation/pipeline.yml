@@ -116,13 +116,13 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       Name: cicd-demo-blue-tg
-      Port: 8080
+      Port: 80
       Protocol: HTTP
       VpcId: vpc-0a38c8b865b35e1f9
       TargetType: ip
       HealthCheckEnabled: true
       HealthCheckIntervalSeconds: 30
-      HealthCheckPath: /health
+      HealthCheckPath: /
       HealthCheckProtocol: HTTP
       HealthCheckTimeoutSeconds: 5
       HealthyThresholdCount: 2
@@ -137,13 +137,13 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       Name: cicd-demo-green-tg
-      Port: 8080
+      Port: 80
       Protocol: HTTP
       VpcId: vpc-0a38c8b865b35e1f9
       TargetType: ip
       HealthCheckEnabled: true
       HealthCheckIntervalSeconds: 30
-      HealthCheckPath: /health
+      HealthCheckPath: /
       HealthCheckProtocol: HTTP
       HealthCheckTimeoutSeconds: 5
       HealthyThresholdCount: 2
