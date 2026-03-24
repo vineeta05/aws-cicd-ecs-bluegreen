@@ -3,25 +3,27 @@ Description: Java CI/CD Pipeline with ECS Fargate Blue/Green Deployment via Code
 
 Resources:
 
-  # S3 Bucket for artifacts
   ArtifactBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: aws-cicd-ecs-bluegreen-bucket
+      BucketName: aws-cicd-ecs-bluegreen-bucket-vineeta-2677
 
-  # ECR Repository
   ECRRepository:
     Type: AWS::ECR::Repository
     Properties:
       RepositoryName: cicd-demo
 
-  # ECS Cluster
+  ECSLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/cicd-demo
+      RetentionInDays: 14
+
   ECSCluster:
     Type: AWS::ECS::Cluster
     Properties:
       ClusterName: java-cicd-cluster
 
-  # Internet Gateway for VPC
   InternetGateway:
     Type: AWS::EC2::InternetGateway
     Properties:
@@ -29,14 +31,12 @@ Resources:
         - Key: Name
           Value: cicd-demo-igw
 
-  # Attach IGW to VPC
   AttachGateway:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
       VpcId: vpc-0a38c8b865b35e1f9
       InternetGatewayId: !Ref InternetGateway
 
-  # Route Table for public subnets
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
@@ -45,7 +45,6 @@ Resources:
         - Key: Name
           Value: cicd-demo-public-rt
 
-  # Route to Internet Gateway
   PublicRoute:
     Type: AWS::EC2::Route
     DependsOn: AttachGateway
@@ -54,21 +53,18 @@ Resources:
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref InternetGateway
 
-  # Associate Subnet 1 with Route Table
   SubnetRouteTableAssociation1:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: subnet-03cd0644ab70b302d
       RouteTableId: !Ref PublicRouteTable
 
-  # Associate Subnet 2 with Route Table
   SubnetRouteTableAssociation2:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: subnet-006844af1140cc463
       RouteTableId: !Ref PublicRouteTable
 
-  # Security Group for ALB and ECS Tasks
   ALBSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -80,21 +76,14 @@ Resources:
           FromPort: 80
           ToPort: 80
           CidrIp: 0.0.0.0/0
-          Description: Allow HTTP from anywhere
         - IpProtocol: tcp
-          FromPort: 8080
-          ToPort: 8080
+          FromPort: 8081
+          ToPort: 8081
           CidrIp: 0.0.0.0/0
-          Description: Allow port 8080 for validation
       SecurityGroupEgress:
         - IpProtocol: -1
           CidrIp: 0.0.0.0/0
-          Description: Allow all outbound traffic
-      Tags:
-        - Key: Name
-          Value: cicd-demo-alb-sg
 
-  # Security Group for ECS Tasks
   ECSSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -106,16 +95,10 @@ Resources:
           FromPort: 8080
           ToPort: 8080
           SourceSecurityGroupId: !Ref ALBSecurityGroup
-          Description: Allow traffic from ALB
       SecurityGroupEgress:
         - IpProtocol: -1
           CidrIp: 0.0.0.0/0
-          Description: Allow all outbound traffic
-      Tags:
-        - Key: Name
-          Value: cicd-demo-ecs-sg
 
-  # Application Load Balancer
   ApplicationLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
@@ -128,11 +111,7 @@ Resources:
         - subnet-006844af1140cc463
       SecurityGroups:
         - !Ref ALBSecurityGroup
-      Tags:
-        - Key: Name
-          Value: cicd-demo-alb
 
-  # Blue Target Group (for Blue/Green deployment)
   TargetGroupBlue:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
@@ -153,11 +132,7 @@ Resources:
       TargetGroupAttributes:
         - Key: deregistration_delay.timeout_seconds
           Value: '30'
-      Tags:
-        - Key: Name
-          Value: cicd-demo-blue-tg
 
-  # Green Target Group (for Blue/Green deployment)
   TargetGroupGreen:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
@@ -178,11 +153,7 @@ Resources:
       TargetGroupAttributes:
         - Key: deregistration_delay.timeout_seconds
           Value: '30'
-      Tags:
-        - Key: Name
-          Value: cicd-demo-green-tg
 
-  # ALB Listener for Blue (main traffic)
   ALBListenerBlue:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
@@ -193,22 +164,20 @@ Resources:
         - Type: forward
           TargetGroupArn: !Ref TargetGroupBlue
 
-  # ALB Listener for Green (validation traffic on port 8080)
   ALBListenerGreen:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
       LoadBalancerArn: !Ref ApplicationLoadBalancer
-      Port: 8080
+      Port: 8081
       Protocol: HTTP
       DefaultActions:
         - Type: forward
           TargetGroupArn: !Ref TargetGroupGreen
 
-  # ECS Task Execution Role
   ECSTaskExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: ecs-task-execution-role
+      RoleName: ecs-task-execution-role-vineeta
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -219,7 +188,6 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
 
-  # ECS Task Definition
   ECSTaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
@@ -244,28 +212,36 @@ Resources:
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: ecs
 
-  # ECS Service
   ECSService:
     Type: AWS::ECS::Service
+    DependsOn:
+      - ALBListenerBlue
+      - ALBListenerGreen
     Properties:
       ServiceName: cicd-demo-service
       Cluster: !Ref ECSCluster
       TaskDefinition: !Ref ECSTaskDefinition
       DesiredCount: 1
       LaunchType: FARGATE
+      DeploymentController:
+        Type: CODE_DEPLOY
       NetworkConfiguration:
         AwsvpcConfiguration:
           AssignPublicIp: ENABLED
           Subnets:
             - subnet-03cd0644ab70b302d
+            - subnet-006844af1140cc463
           SecurityGroups:
             - !Ref ECSSecurityGroup
+      LoadBalancers:
+        - ContainerName: cicd-demo
+          ContainerPort: 8080
+          TargetGroupArn: !Ref TargetGroupBlue
 
-  # CodeDeploy Service Role
   CodeDeployServiceRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: codedeploy-ecs-service-role
+      RoleName: codedeploy-ecs-service-role-vineeta
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -273,51 +249,13 @@ Resources:
             Principal:
               Service: codedeploy.amazonaws.com
             Action: sts:AssumeRole
-      Policies:
-        - PolicyName: CodeDeployECSPolicy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - ecs:CreateTaskSet
-                  - ecs:UpdateServicePrimaryTaskSet
-                  - ecs:DescribeTaskSet
-                  - ecs:DescribeServices
-                  - ecs:DescribeTaskDefinition
-                  - ecs:DescribeTasks
-                  - ecs:ListTasks
-                Resource: '*'
-              - Effect: Allow
-                Action:
-                  - elasticloadbalancing:DescribeTargetGroups
-                  - elasticloadbalancing:DescribeListeners
-                  - elasticloadbalancing:ModifyListener
-                  - elasticloadbalancing:DescribeRules
-                  - elasticloadbalancing:ModifyRule
-                Resource: '*'
-              - Effect: Allow
-                Action:
-                  - lambda:InvokeFunction
-                Resource: '*'
-              - Effect: Allow
-                Action:
-                  - cloudwatch:GetMetricStatistics
-                Resource: '*'
-              - Effect: Allow
-                Action:
-                  - sns:Publish
-                Resource: '*'
-              - Effect: Allow
-                Action:
-                  - s3:GetObject
-                Resource: '*'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSCodeDeployRoleForECS
 
-  # CodeBuild Service Role
   CodeBuildServiceRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: codebuild-java-cicd-build-service-role
+      RoleName: codebuild-java-cicd-build-service-role-vineeta
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -359,11 +297,10 @@ Resources:
                   - ecr:CompleteLayerUpload
                 Resource: !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/*"
 
-  # CodePipeline Service Role
   CodePipelineRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: test-pipeline-role
+      RoleName: test-pipeline-role-vineeta
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -385,13 +322,8 @@ Resources:
               - Effect: Allow
                 Action:
                   - codecommit:*
-                Resource: '*'
-              - Effect: Allow
-                Action:
                   - codebuild:*
-                Resource: '*'
-              - Effect: Allow
-                Action:
+                  - codedeploy:*
                   - ecs:*
                 Resource: '*'
               - Effect: Allow
@@ -399,27 +331,16 @@ Resources:
                   - iam:PassRole
                 Resource: '*'
 
-  # ECS Deploy Role for CodePipeline
-  ECSDeployRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: ecs-deploy-role
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: codepipeline.amazonaws.com
-            Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/AmazonECS_FullAccess
-
-  # CodeBuild Project
   CodeBuildProject:
     Type: AWS::CodeBuild::Project
     Properties:
       Name: java-cicd-build
       ServiceRole: !GetAtt CodeBuildServiceRole.Arn
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: /aws/codebuild/java-cicd-build
+          StreamName: build-log
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
@@ -434,36 +355,47 @@ Resources:
       Artifacts:
         Type: CODEPIPELINE
 
-  # CodeDeploy Application
   CodeDeployApplication:
     Type: AWS::CodeDeploy::Application
     Properties:
       ApplicationName: cicd-demo-app
       ComputePlatform: ECS
 
-  # CodeDeploy Deployment Group for Blue/Green
   CodeDeployDeploymentGroup:
     Type: AWS::CodeDeploy::DeploymentGroup
     Properties:
       ApplicationName: !Ref CodeDeployApplication
       DeploymentGroupName: cicd-demo-dg
-      DeploymentConfigName: CodeDeployDefault.ECSLinear10Percent5Minutes
+      DeploymentConfigName: CodeDeployDefault.ECSLinear10PercentEvery1Minutes
       ServiceRoleArn: !GetAtt CodeDeployServiceRole.Arn
       AutoRollbackConfiguration:
         Enabled: true
         Events:
           - DEPLOYMENT_FAILURE
-          - DEPLOYMENT_STOP_ON_ALARM
-      TriggerConfigurations: []
       DeploymentStyle:
         DeploymentType: BLUE_GREEN
         DeploymentOption: WITH_TRAFFIC_CONTROL
+      BlueGreenDeploymentConfiguration:
+        DeploymentReadyOption:
+          ActionOnTimeout: CONTINUE_DEPLOYMENT
+        TerminateBlueInstancesOnDeploymentSuccess:
+          Action: TERMINATE
+          TerminationWaitTimeInMinutes: 5
+      ECSServices:
+        - ClusterName: !Ref ECSCluster
+          ServiceName: !Ref ECSService
       LoadBalancerInfo:
         TargetGroupPairInfoList:
-          - TargetGroupName: !GetAtt TargetGroupBlue.TargetGroupName
-            TargetGroup2Name: !GetAtt TargetGroupGreen.TargetGroupName
+          - ProdTrafficRoute:
+              ListenerArns:
+                - !Ref ALBListenerBlue
+            TestTrafficRoute:
+              ListenerArns:
+                - !Ref ALBListenerGreen
+            TargetGroups:
+              - Name: !GetAtt TargetGroupBlue.TargetGroupName
+              - Name: !GetAtt TargetGroupGreen.TargetGroupName
 
-  # CodePipeline
   TestPipeline:
     Type: AWS::CodePipeline::Pipeline
     Properties:
@@ -473,7 +405,6 @@ Resources:
         Type: S3
         Location: !Ref ArtifactBucket
       Stages:
-
         - Name: Source
           Actions:
             - Name: Source
@@ -519,10 +450,17 @@ Resources:
               ActionTypeId:
                 Category: Deploy
                 Owner: AWS
-                Provider: CodeDeploy
+                Provider: CodeDeployToECS
                 Version: '1'
               Configuration:
                 ApplicationName: !Ref CodeDeployApplication
                 DeploymentGroupName: !Ref CodeDeployDeploymentGroup
+                TaskDefinitionTemplateArtifact: SourceArtifact
+                TaskDefinitionTemplatePath: java-cicd/taskdef.json
+                AppSpecTemplateArtifact: SourceArtifact
+                AppSpecTemplatePath: java-cicd/appspec.yml
+                Image1ArtifactName: BuildArtifact
+                Image1ContainerName: IMAGE1_NAME
               InputArtifacts:
+                - Name: SourceArtifact
                 - Name: BuildArtifact
