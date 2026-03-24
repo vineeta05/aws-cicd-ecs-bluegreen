@@ -92,8 +92,8 @@ Resources:
       VpcId: vpc-0a38c8b865b35e1f9
       SecurityGroupIngress:
         - IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
+          FromPort: 8080
+          ToPort: 8080
           SourceSecurityGroupId: !Ref ALBSecurityGroup
       SecurityGroupEgress:
         - IpProtocol: -1
@@ -116,13 +116,13 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       Name: cicd-demo-blue-tg
-      Port: 80
+      Port: 8080
       Protocol: HTTP
       VpcId: vpc-0a38c8b865b35e1f9
       TargetType: ip
       HealthCheckEnabled: true
       HealthCheckIntervalSeconds: 30
-      HealthCheckPath: /
+      HealthCheckPath: /health
       HealthCheckProtocol: HTTP
       HealthCheckTimeoutSeconds: 5
       HealthyThresholdCount: 2
@@ -137,13 +137,13 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       Name: cicd-demo-green-tg
-      Port: 80
+      Port: 8080
       Protocol: HTTP
       VpcId: vpc-0a38c8b865b35e1f9
       TargetType: ip
       HealthCheckEnabled: true
       HealthCheckIntervalSeconds: 30
-      HealthCheckPath: /
+      HealthCheckPath: /health
       HealthCheckProtocol: HTTP
       HealthCheckTimeoutSeconds: 5
       HealthyThresholdCount: 2
@@ -200,9 +200,9 @@ Resources:
       ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
       ContainerDefinitions:
         - Name: cicd-demo
-          Image: public.ecr.aws/nginx/nginx:latest
+          Image: 829489762677.dkr.ecr.us-east-1.amazonaws.com/cicd-demo:latest
           PortMappings:
-            - ContainerPort: 80
+            - ContainerPort: 8080
               Protocol: tcp
           Essential: true
           LogConfiguration:
@@ -235,7 +235,7 @@ Resources:
             - !Ref ECSSecurityGroup
       LoadBalancers:
         - ContainerName: cicd-demo
-          ContainerPort: 80
+          ContainerPort: 8080
           TargetGroupArn: !Ref TargetGroupBlue
 
   CodeDeployServiceRole:
