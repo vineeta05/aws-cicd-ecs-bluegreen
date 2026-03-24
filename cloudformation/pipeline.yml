@@ -202,7 +202,7 @@ Resources:
         - Name: cicd-demo
           Image: public.ecr.aws/nginx/nginx:latest
           PortMappings:
-            - ContainerPort: 8080
+            - ContainerPort: 80
               Protocol: tcp
           Essential: true
           LogConfiguration:
