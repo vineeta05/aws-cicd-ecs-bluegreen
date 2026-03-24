@@ -7,5 +7,5 @@ Resources:
         TaskDefinition: <TASK_DEFINITION>
         LoadBalancerInfo:
           ContainerName: cicd-demo
-          ContainerPort: 8080
+          ContainerPort: 80
 
