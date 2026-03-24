@@ -8,12 +8,7 @@ Resources:
     Properties:
       BucketName: aws-cicd-ecs-bluegreen-bucket-vineeta-2677
 
-  ECRRepository:
-    Type: AWS::ECR::Repository
-    Properties:
-      RepositoryName: cicd-demo
-
-  ECSLogGroup:
+   ECSLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: /ecs/cicd-demo
@@ -476,7 +471,7 @@ Outputs:
 
   ECRRepositoryUri:
     Description: ECR Repository URI
-    Value: !GetAtt ECRRepository.RepositoryUri
+    Value: 829489762677.dkr.ecr.us-east-1.amazonaws.com/cicd-demo
 
   ECSClusterName:
     Description: ECS Cluster Name
