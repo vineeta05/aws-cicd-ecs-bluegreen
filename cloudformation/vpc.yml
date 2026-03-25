@@ -1,0 +1,57 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: VPC and Subnet Setup for ECS CI/CD Pipeline
+
+Resources:
+  # Create VPC
+  MyVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: cicd-vpc
+
+  # Create Subnet 1
+  Subnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: cicd-subnet-1
+
+  # Create Subnet 2
+  Subnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: cicd-subnet-2
+
+Outputs:
+  VpcId:
+    Description: VPC ID
+    Value: !Ref MyVPC
+    Export:
+      Name: cicd-vpc-id
+
+  Subnet1Id:
+    Description: Subnet 1 ID
+    Value: !Ref Subnet1
+    Export:
+      Name: cicd-subnet-1-id
+
+  Subnet2Id:
+    Description: Subnet 2 ID
+    Value: !Ref Subnet2
+    Export:
+      Name: cicd-subnet-2-id

@@ -1,18 +1,46 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Java CI/CD Pipeline with ECS Fargate Blue/Green Deployment via CodeDeploy
 
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID for the ECS cluster and related resources
+
+  SubnetId1:
+    Type: AWS::EC2::Subnet::Id
+    Description: Subnet ID 1 for the ECS cluster and related resources
+
+  SubnetId2:
+    Type: AWS::EC2::Subnet::Id
+    Description: Subnet ID 2 for the ECS cluster and related resources  
+
+  AWSRegion:
+    Type: String
+    Default: us-east-1
+    Description: AWS Region for resource deployment    
+
+  ECRRepositoryName:
+    Type: String
+    Default: cicd-demo
+    Description: Name of the ECR repository for storing Docker images   
+
+  S3BucketName:
+    Type: String
+    Default: aws-cicd-ecs-bluegreen-bucket
+    Description: S3 bucket name for storing pipeline artifacts 
+  
 Resources:
 
   ArtifactBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: aws-cicd-ecs-bluegreen-bucket-vineeta-2677
+      BucketName: !Ref S3BucketName
 
   ECSLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: /ecs/cicd-demo
-      RetentionInDays: 14
+      RetentionInDays: 1
 
   ECSCluster:
     Type: AWS::ECS::Cluster
@@ -29,13 +57,13 @@ Resources:
   AttachGateway:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
-      VpcId: vpc-0a38c8b865b35e1f9
+      VpcId: !Ref VpcId
       InternetGatewayId: !Ref InternetGateway
 
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
-      VpcId: vpc-0a38c8b865b35e1f9
+      VpcId: !Ref VpcId
       Tags:
         - Key: Name
           Value: cicd-demo-public-rt
@@ -51,13 +79,13 @@ Resources:
   SubnetRouteTableAssociation1:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
-      SubnetId: subnet-03cd0644ab70b302d
+      SubnetId: !Ref SubnetId1
       RouteTableId: !Ref PublicRouteTable
 
   SubnetRouteTableAssociation2:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
-      SubnetId: subnet-006844af1140cc463
+      SubnetId: !Ref SubnetId2
       RouteTableId: !Ref PublicRouteTable
 
   ALBSecurityGroup:
@@ -65,7 +93,7 @@ Resources:
     Properties:
       GroupName: cicd-demo-alb-sg
       GroupDescription: Security group for ALB allowing HTTP traffic
-      VpcId: vpc-0a38c8b865b35e1f9
+      VpcId: !Ref VpcId
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 80
@@ -84,7 +112,7 @@ Resources:
     Properties:
       GroupName: cicd-demo-ecs-sg
       GroupDescription: Security group for ECS tasks
-      VpcId: vpc-0a38c8b865b35e1f9
+      VpcId: !Ref VpcId
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 8080
@@ -102,8 +130,8 @@ Resources:
       Scheme: internet-facing
       IpAddressType: ipv4
       Subnets:
-        - subnet-03cd0644ab70b302d
-        - subnet-006844af1140cc463
+        - !Ref SubnetId1
+        - !Ref SubnetId2
       SecurityGroups:
         - !Ref ALBSecurityGroup
 
@@ -113,7 +141,7 @@ Resources:
       Name: cicd-demo-blue-tg
       Port: 8080
       Protocol: HTTP
-      VpcId: vpc-0a38c8b865b35e1f9
+      VpcId: !Ref VpcId
       TargetType: ip
       HealthCheckEnabled: true
       HealthCheckIntervalSeconds: 30
@@ -134,7 +162,7 @@ Resources:
       Name: cicd-demo-green-tg
       Port: 8080
       Protocol: HTTP
-      VpcId: vpc-0a38c8b865b35e1f9
+      VpcId: !Ref VpcId
       TargetType: ip
       HealthCheckEnabled: true
       HealthCheckIntervalSeconds: 30
@@ -229,7 +257,7 @@ Resources:
       TaskRoleArn: !GetAtt ECSTaskRole.Arn
       ContainerDefinitions:
         - Name: cicd-demo
-          Image: 829489762677.dkr.ecr.us-east-1.amazonaws.com/cicd-demo:latest
+          Image: !Sub "${AWS::AccountId}.dkr.ecr.${AWSRegion}.amazonaws.com/${ECRRepositoryName}:latest"
           PortMappings:
             - ContainerPort: 8080
               Protocol: tcp
@@ -259,8 +287,8 @@ Resources:
         AwsvpcConfiguration:
           AssignPublicIp: ENABLED
           Subnets:
-            - subnet-03cd0644ab70b302d
-            - subnet-006844af1140cc463
+            - !Ref SubnetId1
+            - !Ref SubnetId2
           SecurityGroups:
             - !Ref ECSSecurityGroup
       LoadBalancers:
@@ -378,7 +406,7 @@ Resources:
         PrivilegedMode: true
         EnvironmentVariables:
           - Name: ECR_REPO_URI
-            Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/cicd-demo"
+            Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWSRegion}.amazonaws.com/${ECRRepositoryName}"
       Source:
         Type: CODEPIPELINE
         BuildSpec: java-cicd/buildspec.yml
@@ -506,7 +534,7 @@ Outputs:
 
   ECRRepositoryUri:
     Description: ECR Repository URI
-    Value: 829489762677.dkr.ecr.us-east-1.amazonaws.com/cicd-demo
+    Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWSRegion}.amazonaws.com/${ECRRepositoryName}"
 
   ECSClusterName:
     Description: ECS Cluster Name
